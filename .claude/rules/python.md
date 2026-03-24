@@ -28,6 +28,28 @@ paths:
 - Use `Protocol` for structural subtyping instead of ABC when possible
 - Avoid `Any`; when unavoidable, add a comment explaining why (e.g., `# Any: third-party lib has no stubs`)
 
+## Type Safety Overrides
+
+- `type: ignore` is allowed ONLY for third-party libraries that lack type stubs
+- MUST specify the exact error code: `# type: ignore[misc]` not bare `# type: ignore`
+- MUST include a brief justification: `# type: ignore[misc]  # rumps has no type stubs`
+- Before adding `type: ignore`, first try to resolve through design changes (typed dicts, wrappers, Protocol)
+- NEVER use `type: ignore` to bypass errors in your own code
+
+## Suppression Comments (noqa)
+
+- `# noqa` is allowed ONLY for intentional rule violations with documented reasons
+- MUST specify the exact rule code: `# noqa: PLC0415` not bare `# noqa`
+- Valid use cases: lazy imports (`PLC0415`), security-safe subprocess calls (`S603`)
+- Before adding `# noqa`, verify the rule code is correct for the actual violation
+- NEVER use `# noqa` to silence warnings you don't understand
+
+## Third-Party Object Integrity
+
+- NEVER monkey-patch attributes onto third-party library objects
+- Use composition: maintain your own mapping dict instead of adding attributes to external instances
+- Example: instead of `menu_item._value = 42`, use `self._values[menu_item.title] = 42`
+
 ## Performance
 
 - Use generator expressions and `itertools` for large sequences; avoid materializing unnecessary lists
