@@ -3,33 +3,48 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "my-package"
+name = "hydro-key"
 version = "0.1.0"
-description = "A short description of the project."
+description = "macOS menu bar water intake tracker with global hotkey."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-authors = [{ name = "Your Name", email = "you@example.com" }]
-keywords = []
+authors = [{ name = "tomada" }]
+keywords = ["macos", "menu-bar", "water", "hydration", "tracker"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
+dependencies = [
+    "rumps>=0.4; sys_platform == 'darwin'",
+    "pynput>=1.7",
+]
+
+[project.scripts]
+hydrokey = "hydro_key:run"
 
 [project.urls]
-Homepage = "https://github.com/your-username/my-package"
-Documentation = "https://your-username.github.io/my-package"
-Repository = "https://github.com/your-username/my-package"
-Issues = "https://github.com/your-username/my-package/issues"
-Changelog = "https://github.com/your-username/my-package/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/tomada/hydro-key"
+Documentation = "https://tomada.github.io/hydro-key"
+Repository = "https://github.com/tomada/hydro-key"
+Issues = "https://github.com/tomada/hydro-key/issues"
+Changelog = "https://github.com/tomada/hydro-key/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["mypy>=1.10", "pre-commit>=3.7", "pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.11"]
+dev = [
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.11",
+    "vulture>=2.15",
+]
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.25"]
 
 # --------------------------------------------------------------------------- #
@@ -37,7 +52,7 @@ docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.25"]
 # --------------------------------------------------------------------------- #
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/my_package"]
+packages = ["src/hydro_key"]
 
 # --------------------------------------------------------------------------- #
 #  Ruff – linter & formatter
@@ -73,6 +88,8 @@ select = [
     # --- Performance ---
     "PERF", # perflint
     "FURB", # refurb
+    # --- Datetime safety ---
+    "DTZ",  # flake8-datetimez
     # --- Type checking ---
     "TCH",  # flake8-type-checking
     # --- Style ---
@@ -94,6 +111,7 @@ ignore = [
 "tests/**" = [
     "S101",    # assert is fine in tests
     "ARG001",  # unused arguments (fixtures)
+    "ARG002",  # unused method arguments (mock parameters from @patch)
     "PLR2004", # magic numbers in tests
     "T20",     # print in tests
 ]
@@ -121,6 +139,10 @@ show_error_codes = true
 enable_error_code = ["ignore-without-code", "redundant-cast", "truthy-bool"]
 
 [[tool.mypy.overrides]]
+module = ["rumps", "rumps.*", "pynput", "pynput.*", "AppKit", "AppKit.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_untyped_calls = false
@@ -135,7 +157,7 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "-v",
-    "--cov=my_package",
+    "--cov=hydro_key",
     "--cov-branch",
     "--cov-report=term-missing:skip-covered",
     "--cov-fail-under=80",
@@ -150,6 +172,9 @@ markers = [
 
 [tool.coverage.run]
 branch = true
+omit = [
+    "src/hydro_key/_app.py",  # GUI coordinator — requires macOS run loop
+]
 
 [tool.coverage.report]
 exclude_lines = [

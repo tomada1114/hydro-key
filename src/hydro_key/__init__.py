@@ -1,12 +1,10 @@
-"""Public package interface for my_package."""
+"""HydroKey - macOS menu bar water intake tracker."""
 
 from __future__ import annotations
 
 import tomllib
 from importlib.metadata import PackageNotFoundError, packages_distributions, version
 from pathlib import Path
-
-from .core import add
 
 
 def _find_local_project_version(module_path: Path | None = None) -> str | None:
@@ -56,5 +54,13 @@ def _load_version() -> str:
     return "0.0.0+unknown"
 
 
+def run() -> None:
+    """Launch the HydroKey menu bar application."""
+    from hydro_key._app import HydroKeyApp  # noqa: PLC0415  # defer GUI imports
+
+    app = HydroKeyApp()
+    app.run()
+
+
 __version__ = _load_version()
-__all__ = ["__version__", "add"]
+__all__ = ["__version__", "run"]

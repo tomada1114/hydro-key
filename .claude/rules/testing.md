@@ -59,6 +59,13 @@ paths:
 - Assert on behavior and outputs, not on how many times a mock was called
 - If you need to mock more than 2 things in one test, the code under test may have too many dependencies
 
+## Mock Parameter Naming
+
+- `@patch` decorator injects mock objects as test method parameters
+- If the mock is used in assertions, name it descriptively: `mock_hotkeys_cls`
+- If the mock is only needed for patching (not asserted), prefix with `_`: `_mock_run`
+- This prevents ARG002 violations while documenting intent
+
 ## Test Independence and Reliability
 
 - Tests must be independent: no shared mutable state, no ordering dependency
