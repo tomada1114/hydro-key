@@ -64,7 +64,7 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
         self._config = load_config()
         self._last_record_id: int | None = None
-        self._last_interaction: datetime | None = None
+        self._last_interaction: datetime | None = datetime.now()
         self._hotkey_queue: SimpleQueue[None] = SimpleQueue()
         self._hotkey_listener = HotkeyListener(
             self._hotkey_queue,
