@@ -56,7 +56,13 @@ def parse_hotkey(hotkey: str) -> str:
 
 
 class HotkeyListener:
-    """Manages a global hotkey that pushes events to a queue."""
+    """Manages a global hotkey that pushes events to a queue.
+
+    Uses ``keyboard.Listener`` with ``keyboard.HotKey`` instead of
+    ``keyboard.GlobalHotKeys`` to work around a pynput 1.8.x bug where
+    the darwin backend omits the ``injected`` argument on special-key
+    events.
+    """
 
     def __init__(
         self,
@@ -65,7 +71,7 @@ class HotkeyListener:
     ) -> None:
         self._queue = queue
         self._on_error = on_error
-        self._listener: keyboard.GlobalHotKeys | None = None
+        self._listener: keyboard.Listener | None = None
 
     def start(self, hotkey: str) -> None:
         """Start listening for the specified hotkey."""
@@ -74,8 +80,17 @@ class HotkeyListener:
         pynput_key = parse_hotkey(hotkey)
 
         try:
-            self._listener = keyboard.GlobalHotKeys(
-                {pynput_key: self._on_activate},
+            hotkey_obj = keyboard.HotKey(
+                keyboard.HotKey.parse(pynput_key),
+                self._on_activate,
+            )
+            self._listener = keyboard.Listener(
+                on_press=lambda key, *_args: hotkey_obj.press(
+                    self._listener.canonical(key)  # type: ignore[union-attr]
+                ),
+                on_release=lambda key, *_args: hotkey_obj.release(
+                    self._listener.canonical(key)  # type: ignore[union-attr]
+                ),
             )
             self._listener.daemon = True  # exits with main thread
             self._listener.start()
