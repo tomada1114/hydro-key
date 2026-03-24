@@ -1,0 +1,314 @@
+"""Main menu bar application for HydroKey."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from queue import Empty, SimpleQueue
+from typing import TYPE_CHECKING
+
+import rumps
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+from hydro_key._config import (
+    ACTIVE_END_OPTIONS,
+    ACTIVE_START_OPTIONS,
+    GOAL_OPTIONS,
+    HOTKEY_OPTIONS,
+    PER_PRESS_OPTIONS,
+    REMINDER_OPTIONS,
+    load_config,
+    save_config,
+)
+from hydro_key._db import add_record, delete_record, ensure_db, today_total
+from hydro_key._hotkey import HotkeyListener
+from hydro_key._notify import (
+    notify_recorded,
+    notify_reminder,
+    notify_undo,
+    play_sound,
+)
+from hydro_key._reminder import should_fire_reminder
+
+logger = logging.getLogger(__name__)
+
+
+def _setup_logging() -> None:
+    """Configure logging to file with rotation."""
+    log_dir = Path.home() / ".config" / "hydrokey"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = RotatingFileHandler(
+        log_dir / "hydrokey.log",
+        maxBytes=1_000_000,
+        backupCount=3,
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"),
+    )
+    logging.getLogger("hydro_key").addHandler(handler)
+    logging.getLogger("hydro_key").setLevel(logging.INFO)
+
+
+class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
+    """macOS menu bar water intake tracker."""
+
+    def __init__(self) -> None:
+        super().__init__("HydroKey", quit_button=None)
+
+        _setup_logging()
+        ensure_db()
+
+        self._config = load_config()
+        self._last_record_id: int | None = None
+        self._last_interaction: datetime | None = None
+        self._hotkey_queue: SimpleQueue[None] = SimpleQueue()
+        self._hotkey_listener = HotkeyListener(
+            self._hotkey_queue,
+            on_error=self._on_hotkey_error,
+        )
+
+        # Typed mappings to avoid monkey-patching rumps.MenuItem
+        self._submenus: dict[str, rumps.MenuItem] = {}
+        self._int_values: dict[str, int] = {}
+        self._str_values: dict[str, str] = {}
+
+        self._build_menu()
+        self._update_title()
+        self._hotkey_listener.start(self._config.hotkey)
+
+    def _build_menu(self) -> None:
+        """Construct the full dropdown menu."""
+        # Today total (non-clickable)
+        self._today_item = rumps.MenuItem("Today: 0ml")
+        self._today_item.set_callback(None)
+
+        # Undo
+        self._undo_item = rumps.MenuItem("Undo Last", callback=self._on_undo)
+        self._undo_item.set_callback(None)  # disabled initially
+
+        # Settings submenus
+        goal_menu = self._make_int_submenu(
+            "Goal",
+            GOAL_OPTIONS,
+            self._config.goal_ml,
+            self._on_goal,
+            fmt=lambda v: f"{v}ml",
+        )
+        per_press_menu = self._make_int_submenu(
+            "Per Press",
+            PER_PRESS_OPTIONS,
+            self._config.per_press_ml,
+            self._on_per_press,
+            fmt=lambda v: f"{v}ml",
+        )
+        reminder_menu = self._make_int_submenu(
+            "Reminder",
+            REMINDER_OPTIONS,
+            self._config.reminder_interval_min,
+            self._on_reminder,
+            fmt=lambda v: "OFF" if v == 0 else f"{v}min",
+        )
+        active_start_menu = self._make_int_submenu(
+            "Active Start",
+            ACTIVE_START_OPTIONS,
+            self._config.active_start_hour,
+            self._on_active_start,
+            fmt=lambda v: f"{v}:00",
+        )
+        active_end_menu = self._make_int_submenu(
+            "Active End",
+            ACTIVE_END_OPTIONS,
+            self._config.active_end_hour,
+            self._on_active_end,
+            fmt=lambda v: f"{v}:00",
+        )
+        hotkey_menu = self._make_str_submenu(
+            "Hotkey",
+            HOTKEY_OPTIONS,
+            self._config.hotkey,
+            self._on_hotkey,
+        )
+
+        quit_item = rumps.MenuItem("Quit", callback=self._on_quit)
+
+        self.menu = [
+            self._today_item,
+            self._undo_item,
+            None,  # separator
+            goal_menu,
+            per_press_menu,
+            reminder_menu,
+            active_start_menu,
+            active_end_menu,
+            hotkey_menu,
+            None,  # separator
+            quit_item,
+        ]
+
+    def _make_int_submenu(
+        self,
+        title: str,
+        options: list[int],
+        current: int,
+        callback: Callable[..., object],
+        fmt: Callable[[int], str],
+    ) -> rumps.MenuItem:
+        """Create a submenu with integer options and checkmarks."""
+        parent = rumps.MenuItem(title)
+        for opt in options:
+            label = fmt(opt)
+            item = rumps.MenuItem(label, callback=callback)
+            self._int_values[label] = opt
+            item.state = 1 if opt == current else 0
+            parent.add(item)
+        self._submenus[title] = parent
+        return parent
+
+    def _make_str_submenu(
+        self,
+        title: str,
+        options: list[str],
+        current: str,
+        callback: Callable[..., object],
+    ) -> rumps.MenuItem:
+        """Create a submenu with string options and checkmarks."""
+        parent = rumps.MenuItem(title)
+        for opt in options:
+            item = rumps.MenuItem(opt, callback=callback)
+            self._str_values[opt] = opt
+            item.state = 1 if opt == current else 0
+            parent.add(item)
+        self._submenus[title] = parent
+        return parent
+
+    def _update_checkmarks_int(self, parent_title: str, new_value: int) -> None:
+        """Update checkmarks in an integer submenu."""
+        parent = self._submenus[parent_title]
+        for item in parent.values():
+            item.state = 1 if self._int_values.get(item.title) == new_value else 0
+
+    def _update_checkmarks_str(self, parent_title: str, new_value: str) -> None:
+        """Update checkmarks in a string submenu."""
+        parent = self._submenus[parent_title]
+        for item in parent.values():
+            item.state = 1 if self._str_values.get(item.title) == new_value else 0
+
+    def _update_title(self) -> None:
+        """Update the menu bar title with current intake."""
+        total = today_total()
+        goal = self._config.goal_ml
+        if total >= goal:
+            self.title = f"\u2705 {total}ml / {goal}ml"
+        else:
+            self.title = f"\U0001f4a7 {total}ml / {goal}ml"
+        self._today_item.title = f"Today: {total}ml"
+
+    def _save_and_update(self) -> None:
+        save_config(self._config)
+        self._update_title()
+
+    # --- Hotkey queue drain (runs on main thread via rumps.Timer) ---
+
+    @rumps.timer(0.1)  # type: ignore[untyped-decorator]  # rumps has no type stubs
+    def _drain_hotkey_queue(self, _sender: object) -> None:
+        """Drain hotkey events from the queue (called on main thread)."""
+        try:
+            while True:
+                self._hotkey_queue.get_nowait()
+                self._record_intake()
+        except Empty:
+            pass
+
+        # Check reminders
+        now = datetime.now()
+        if should_fire_reminder(
+            now,
+            self._last_interaction,
+            self._config.reminder_interval_min,
+            self._config.active_start_hour,
+            self._config.active_end_hour,
+        ):
+            self._last_interaction = now
+            total = today_total()
+            notify_reminder(total, self._config.goal_ml)
+
+    # --- Actions ---
+
+    def _record_intake(self) -> None:
+        amount = self._config.per_press_ml
+        record_id = add_record(amount)
+        self._last_record_id = record_id
+        self._last_interaction = datetime.now()
+        self._update_title()
+
+        total = today_total()
+        play_sound()
+        notify_recorded(amount, total, self._config.goal_ml)
+
+        # Enable undo
+        self._undo_item.set_callback(self._on_undo)
+
+    def _on_undo(self, _sender: object) -> None:
+        if self._last_record_id is None:
+            return
+
+        amount = self._config.per_press_ml
+        delete_record(self._last_record_id)
+        self._last_record_id = None
+        self._last_interaction = datetime.now()
+        self._update_title()
+
+        total = today_total()
+        notify_undo(amount, total, self._config.goal_ml)
+
+        # Disable undo
+        self._undo_item.set_callback(None)
+
+    # --- Settings callbacks ---
+
+    def _on_goal(self, sender: rumps.MenuItem) -> None:
+        self._config.goal_ml = self._int_values[sender.title]
+        self._update_checkmarks_int("Goal", self._config.goal_ml)
+        self._save_and_update()
+
+    def _on_per_press(self, sender: rumps.MenuItem) -> None:
+        self._config.per_press_ml = self._int_values[sender.title]
+        self._update_checkmarks_int("Per Press", self._config.per_press_ml)
+        self._save_and_update()
+
+    def _on_reminder(self, sender: rumps.MenuItem) -> None:
+        self._config.reminder_interval_min = self._int_values[sender.title]
+        self._update_checkmarks_int("Reminder", self._config.reminder_interval_min)
+        self._save_and_update()
+
+    def _on_active_start(self, sender: rumps.MenuItem) -> None:
+        self._config.active_start_hour = self._int_values[sender.title]
+        self._update_checkmarks_int("Active Start", self._config.active_start_hour)
+        self._save_and_update()
+
+    def _on_active_end(self, sender: rumps.MenuItem) -> None:
+        self._config.active_end_hour = self._int_values[sender.title]
+        self._update_checkmarks_int("Active End", self._config.active_end_hour)
+        self._save_and_update()
+
+    def _on_hotkey(self, sender: rumps.MenuItem) -> None:
+        new_hotkey = self._str_values[sender.title]
+        self._config.hotkey = new_hotkey
+        self._update_checkmarks_str("Hotkey", new_hotkey)
+        self._save_and_update()
+        self._hotkey_listener.start(new_hotkey)
+
+    def _on_hotkey_error(self, exc: Exception) -> None:
+        rumps.notification(
+            title="HydroKey",
+            subtitle="Hotkey Error",
+            message=f"Failed to register hotkey: {exc}. Try a different one.",
+        )
+
+    def _on_quit(self, _sender: object) -> None:
+        self._hotkey_listener.stop()
+        rumps.quit_application()
