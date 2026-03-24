@@ -7,14 +7,15 @@ from typing import TYPE_CHECKING
 
 from pynput import keyboard
 
+from hydro_key._config import MODIFIER_OPTIONS
+
 if TYPE_CHECKING:
     from collections.abc import Callable
     from queue import SimpleQueue
 
 logger = logging.getLogger(__name__)
 
-MODIFIER_KEYS: frozenset[str] = frozenset({"cmd", "ctrl", "shift", "alt"})
-_MODIFIER_ORDER: list[str] = ["cmd", "ctrl", "alt", "shift"]
+MODIFIER_KEYS: frozenset[str] = frozenset(MODIFIER_OPTIONS)
 
 
 def validate_hotkey(hotkey: str) -> None:

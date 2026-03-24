@@ -27,7 +27,7 @@ from hydro_key._config import (
     save_config,
 )
 from hydro_key._db import add_record, delete_record, ensure_db, today_total
-from hydro_key._hotkey import _MODIFIER_ORDER, HotkeyListener, validate_hotkey
+from hydro_key._hotkey import HotkeyListener, validate_hotkey
 from hydro_key._reminder import should_fire_reminder
 
 logger = logging.getLogger(__name__)
@@ -127,20 +127,18 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         modifier_menu = rumps.MenuItem("Modifier")
         self._modifier_items: dict[str, rumps.MenuItem] = {}
         for mod in MODIFIER_OPTIONS:
-            label = MODIFIER_DISPLAY[mod]
-            item = rumps.MenuItem(label, callback=self._on_modifier)
+            item = rumps.MenuItem(MODIFIER_DISPLAY[mod], callback=self._on_modifier)
             item.state = 1 if mod in current_modifiers else 0
             modifier_menu.add(item)
-            self._modifier_items[label] = item
+            self._modifier_items[mod] = item
 
         key_menu = rumps.MenuItem("Key")
         self._key_items: dict[str, rumps.MenuItem] = {}
         for key in KEY_OPTIONS:
-            label = key.upper()
-            item = rumps.MenuItem(label, callback=self._on_key)
+            item = rumps.MenuItem(key.upper(), callback=self._on_key)
             item.state = 1 if key == current_key else 0
             key_menu.add(item)
-            self._key_items[label] = item
+            self._key_items[key] = item
 
         hotkey_menu.add(modifier_menu)
         hotkey_menu.add(key_menu)
@@ -277,35 +275,24 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
     def _parse_current_hotkey(self) -> tuple[set[str], str]:
         """Extract modifier set and trigger key from the current hotkey string."""
         parts = [p.strip().lower() for p in self._config.hotkey.split("+")]
-        modifiers = {p for p in parts if p in MODIFIER_OPTIONS}
-        keys = [p for p in parts if p not in MODIFIER_OPTIONS]
-        return modifiers, keys[0] if keys else "w"
+        modifier_set = frozenset(MODIFIER_OPTIONS)
+        modifiers = {p for p in parts if p in modifier_set}
+        keys = [p for p in parts if p not in modifier_set]
+        return modifiers, keys[0] if keys else KEY_OPTIONS[0]
 
     def _build_hotkey_from_ui(self) -> str:
         """Build a hotkey string from the current UI checkmark state."""
-        # Reverse display map: "Cmd" -> "cmd"
-        display_to_internal = {v: k for k, v in MODIFIER_DISPLAY.items()}
-        modifiers = sorted(
-            (
-                display_to_internal[label]
-                for label, item in self._modifier_items.items()
-                if item.state
-            ),
-            key=_MODIFIER_ORDER.index,
-        )
+        modifiers = [mod for mod, item in self._modifier_items.items() if item.state]
         key = next(
-            (label.lower() for label, item in self._key_items.items() if item.state),
-            "w",
+            (k for k, item in self._key_items.items() if item.state),
+            KEY_OPTIONS[0],
         )
         return "+".join([*modifiers, key])
 
     def _on_modifier(self, sender: rumps.MenuItem) -> None:
-        # Toggle
         sender.state = 0 if sender.state else 1
 
-        # Must have at least one modifier
-        any_checked = any(item.state for item in self._modifier_items.values())
-        if not any_checked:
+        if not any(item.state for item in self._modifier_items.values()):
             sender.state = 1
             rumps.alert(
                 title="Invalid Hotkey",
@@ -316,16 +303,17 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         self._apply_hotkey_change()
 
     def _on_key(self, sender: rumps.MenuItem) -> None:
-        # Single-select: uncheck all, check selected
         for item in self._key_items.values():
             item.state = 0
         sender.state = 1
-
         self._apply_hotkey_change()
 
     def _apply_hotkey_change(self) -> None:
         """Rebuild hotkey from UI state, validate, save, and restart listener."""
         new_hotkey = self._build_hotkey_from_ui()
+        if new_hotkey == self._config.hotkey:
+            return
+
         try:
             validate_hotkey(new_hotkey)
         except ValueError as exc:
