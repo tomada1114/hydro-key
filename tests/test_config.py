@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from hydro_key._config import (
-    HOTKEY_OPTIONS,
     Config,
     load_config,
     save_config,
@@ -121,9 +120,13 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="reminder_interval_min"):
             Config(reminder_interval_min=999)
 
-    def test_rejects_invalid_hotkey(self):
-        with pytest.raises(ValueError, match="hotkey"):
-            Config(hotkey="invalid")
+    def test_rejects_hotkey_without_modifier(self):
+        with pytest.raises(ValueError, match="at least one modifier"):
+            Config(hotkey="just_a_key")
+
+    def test_accepts_freeform_hotkey(self):
+        cfg = Config(hotkey="alt+ctrl+f5")
+        assert cfg.hotkey == "alt+ctrl+f5"
 
     def test_rejects_invalid_active_start(self):
         with pytest.raises(ValueError, match="active_start_hour"):
@@ -140,11 +143,15 @@ class TestConfigValidation:
         assert cfg == Config()
 
 
-class TestHotkeyOptions:
-    def test_default_hotkey_in_options(self):
-        assert Config().hotkey in HOTKEY_OPTIONS
+class TestHotkeyConfig:
+    def test_default_hotkey_has_modifier(self):
+        cfg = Config()
+        assert "+" in cfg.hotkey
 
-    @pytest.mark.parametrize("hotkey", HOTKEY_OPTIONS)
-    def test_all_options_are_valid_config_values(self, hotkey: str):
+    @pytest.mark.parametrize(
+        "hotkey",
+        ["cmd+w", "ctrl+shift+h", "alt+f1", "cmd+shift+d"],
+    )
+    def test_various_valid_hotkeys(self, hotkey: str):
         cfg = Config(hotkey=hotkey)
         assert cfg.hotkey == hotkey

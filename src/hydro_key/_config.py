@@ -17,13 +17,6 @@ PER_PRESS_OPTIONS: list[int] = [50, 100, 150, 200, 250, 300, 500]
 REMINDER_OPTIONS: list[int] = [0, 30, 45, 60, 90]
 ACTIVE_START_OPTIONS: list[int] = list(range(6, 13))
 ACTIVE_END_OPTIONS: list[int] = list(range(18, 24))
-HOTKEY_OPTIONS: list[str] = [
-    "cmd+shift+w",
-    "cmd+shift+h",
-    "cmd+shift+d",
-    "ctrl+shift+w",
-    "ctrl+shift+h",
-]
 
 
 @dataclass
@@ -53,9 +46,9 @@ class Config:
         if self.active_end_hour not in ACTIVE_END_OPTIONS:
             msg = f"active_end_hour must be one of {ACTIVE_END_OPTIONS}, got {self.active_end_hour}"
             raise ValueError(msg)
-        if self.hotkey not in HOTKEY_OPTIONS:
-            msg = f"hotkey must be one of {HOTKEY_OPTIONS}, got {self.hotkey}"
-            raise ValueError(msg)
+        from hydro_key._hotkey import validate_hotkey  # noqa: PLC0415
+
+        validate_hotkey(self.hotkey)
         if self.active_start_hour >= self.active_end_hour:
             msg = "active_start_hour must be < active_end_hour"
             raise ValueError(msg)

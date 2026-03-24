@@ -18,14 +18,13 @@ from hydro_key._config import (
     ACTIVE_START_OPTIONS,
     APP_DIR,
     GOAL_OPTIONS,
-    HOTKEY_OPTIONS,
     PER_PRESS_OPTIONS,
     REMINDER_OPTIONS,
     load_config,
     save_config,
 )
 from hydro_key._db import add_record, delete_record, ensure_db, today_total
-from hydro_key._hotkey import HotkeyListener
+from hydro_key._hotkey import HotkeyListener, HotkeyRecorder, validate_hotkey
 from hydro_key._notify import (
     notify_recorded,
     notify_reminder,
@@ -125,12 +124,14 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             self._on_active_end,
             fmt=lambda v: f"{v}:00",
         )
-        hotkey_menu = self._make_str_submenu(
-            "Hotkey",
-            HOTKEY_OPTIONS,
-            self._config.hotkey,
-            self._on_hotkey,
+        hotkey_menu = rumps.MenuItem("Hotkey")
+        self._record_item = rumps.MenuItem(
+            "Record Hotkey...", callback=self._on_record_hotkey
         )
+        self._current_hotkey_item = rumps.MenuItem(f"Current: {self._config.hotkey}")
+        self._current_hotkey_item.set_callback(None)
+        hotkey_menu.add(self._record_item)
+        hotkey_menu.add(self._current_hotkey_item)
 
         quit_item = rumps.MenuItem("Quit", callback=self._on_quit)
 
@@ -167,33 +168,11 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         self._submenus[title] = parent
         return parent
 
-    def _make_str_submenu(
-        self,
-        title: str,
-        options: list[str],
-        current: str,
-        callback: Callable[..., object],
-    ) -> rumps.MenuItem:
-        """Create a submenu with string options and checkmarks."""
-        parent = rumps.MenuItem(title)
-        for opt in options:
-            item = rumps.MenuItem(opt, callback=callback)
-            item.state = 1 if opt == current else 0
-            parent.add(item)
-        self._submenus[title] = parent
-        return parent
-
     def _update_checkmarks_int(self, parent_title: str, new_value: int) -> None:
         """Update checkmarks in an integer submenu."""
         parent = self._submenus[parent_title]
         for item in parent.values():
             item.state = 1 if self._int_values.get(item.title) == new_value else 0
-
-    def _update_checkmarks_str(self, parent_title: str, new_value: str) -> None:
-        """Update checkmarks in a string submenu."""
-        parent = self._submenus[parent_title]
-        for item in parent.values():
-            item.state = 1 if item.title == new_value else 0
 
     def _update_title(self) -> int:
         """Update the menu bar title with current intake and return the total."""
@@ -291,10 +270,44 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         self._update_checkmarks_int("Active End", self._config.active_end_hour)
         self._save_and_update()
 
-    def _on_hotkey(self, sender: rumps.MenuItem) -> None:
-        new_hotkey = sender.title
+    def _on_record_hotkey(self, _sender: object) -> None:
+        # Stop the active hotkey listener so it doesn't fire during recording.
+        self._hotkey_listener.stop()
+
+        recorder = HotkeyRecorder()
+        recorder.start()
+        try:
+            window = rumps.Window(
+                title="Record Hotkey",
+                message="Press your desired key combination, then click OK.",
+                default_text=self._config.hotkey,
+                cancel=True,
+            )
+            response = window.run()
+        finally:
+            recorder.stop()
+
+        if not response.clicked:
+            # Cancelled — re-register the current hotkey.
+            self._hotkey_listener.start(self._config.hotkey)
+            return
+
+        new_hotkey = recorder.result
+        if new_hotkey is None:
+            rumps.alert(
+                title="No Hotkey Detected",
+                message="No key combination was detected. Please try again.",
+            )
+            return
+
+        try:
+            validate_hotkey(new_hotkey)
+        except ValueError as exc:
+            rumps.alert(title="Invalid Hotkey", message=str(exc))
+            return
+
         self._config.hotkey = new_hotkey
-        self._update_checkmarks_str("Hotkey", new_hotkey)
+        self._current_hotkey_item.title = f"Current: {new_hotkey}"
         self._save_and_update()
         self._hotkey_listener.start(new_hotkey)
 

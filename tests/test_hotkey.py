@@ -6,27 +6,206 @@ from queue import SimpleQueue
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pynput import keyboard as kb
 
-from hydro_key._config import HOTKEY_OPTIONS
-from hydro_key._hotkey import HOTKEY_MAP, HotkeyListener
+from hydro_key._hotkey import (
+    MODIFIER_KEYS,
+    HotkeyListener,
+    HotkeyRecorder,
+    parse_hotkey,
+    validate_hotkey,
+)
 
 
-class TestHotkeyMap:
-    def test_all_options_have_pynput_format(self):
-        for name, pynput_key in HOTKEY_MAP.items():
-            assert "+" in name
-            assert "<" in pynput_key
+class TestValidateHotkey:
+    def test_valid_hotkey_with_single_modifier(self):
+        validate_hotkey("cmd+w")
 
-    def test_hotkey_map_matches_config_options(self):
-        assert set(HOTKEY_MAP.keys()) == set(HOTKEY_OPTIONS)
+    def test_valid_hotkey_with_multiple_modifiers(self):
+        validate_hotkey("cmd+shift+w")
+
+    def test_all_modifier_keys_accepted(self):
+        for mod in MODIFIER_KEYS:
+            validate_hotkey(f"{mod}+x")
+
+    def test_rejects_empty_string(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            validate_hotkey("")
+
+    def test_rejects_whitespace_only(self):
+        with pytest.raises(ValueError, match="must not be empty"):
+            validate_hotkey("   ")
+
+    def test_rejects_no_modifier(self):
+        with pytest.raises(ValueError, match="at least one modifier"):
+            validate_hotkey("w")
+
+    def test_rejects_modifier_only(self):
+        with pytest.raises(ValueError, match="exactly one non-modifier"):
+            validate_hotkey("cmd+shift")
+
+    def test_rejects_multiple_regular_keys(self):
+        with pytest.raises(ValueError, match="exactly one non-modifier"):
+            validate_hotkey("cmd+a+b")
+
+    def test_case_insensitive(self):
+        validate_hotkey("CMD+SHIFT+W")
+
+
+class TestParseHotkey:
+    def test_single_modifier(self):
+        assert parse_hotkey("cmd+w") == "<cmd>+w"
+
+    def test_multiple_modifiers(self):
+        assert parse_hotkey("cmd+shift+w") == "<cmd>+<shift>+w"
+
+    def test_ctrl_modifier(self):
+        assert parse_hotkey("ctrl+shift+h") == "<ctrl>+<shift>+h"
+
+    def test_preserves_key_order(self):
+        assert parse_hotkey("shift+cmd+w") == "<shift>+<cmd>+w"
+
+    def test_wraps_multi_char_key_names(self):
+        assert parse_hotkey("cmd+f1") == "<cmd>+<f1>"
+        assert parse_hotkey("ctrl+space") == "<ctrl>+<space>"
+
+    def test_single_char_key_stays_bare(self):
+        assert parse_hotkey("cmd+w") == "<cmd>+w"
+
+    def test_raises_on_invalid(self):
+        with pytest.raises(ValueError):
+            parse_hotkey("just_a_key")
+
+
+class TestHotkeyRecorder:
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_start_creates_listener(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        mock_listener_cls.assert_called_once()
+        mock_instance = mock_listener_cls.return_value
+        assert mock_instance.daemon is True
+        mock_instance.start.assert_called_once()
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_stop_stops_listener(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+        recorder.stop()
+
+        mock_listener_cls.return_value.stop.assert_called_once()
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_result_is_none_before_any_key(self, _mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+        assert recorder.result is None
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_captures_modifier_plus_key(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        # Extract callbacks
+        call_kwargs = mock_listener_cls.call_args[1]
+        on_press = call_kwargs["on_press"]
+        on_release = call_kwargs["on_release"]
+
+        # Simulate: press cmd, press w, release w, release cmd
+        on_press(kb.Key.cmd)
+        on_press(kb.KeyCode.from_char("w"))
+        on_release(kb.KeyCode.from_char("w"))
+        on_release(kb.Key.cmd)
+
+        assert recorder.result == "cmd+w"
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_captures_multiple_modifiers(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        call_kwargs = mock_listener_cls.call_args[1]
+        on_press = call_kwargs["on_press"]
+
+        on_press(kb.Key.cmd)
+        on_press(kb.Key.shift)
+        on_press(kb.KeyCode.from_char("w"))
+
+        assert recorder.result == "cmd+shift+w"
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_ignores_key_without_modifier(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        call_kwargs = mock_listener_cls.call_args[1]
+        on_press = call_kwargs["on_press"]
+
+        on_press(kb.KeyCode.from_char("w"))
+
+        assert recorder.result is None
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_ignores_none_key(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        call_kwargs = mock_listener_cls.call_args[1]
+        on_press = call_kwargs["on_press"]
+        on_release = call_kwargs["on_release"]
+
+        on_press(None)
+        on_release(None)
+
+        assert recorder.result is None
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_last_combo_wins(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        call_kwargs = mock_listener_cls.call_args[1]
+        on_press = call_kwargs["on_press"]
+        on_release = call_kwargs["on_release"]
+
+        # First combo
+        on_press(kb.Key.cmd)
+        on_press(kb.KeyCode.from_char("a"))
+        on_release(kb.KeyCode.from_char("a"))
+        on_release(kb.Key.cmd)
+
+        # Second combo overwrites
+        on_press(kb.Key.ctrl)
+        on_press(kb.KeyCode.from_char("b"))
+
+        assert recorder.result == "ctrl+b"
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_captures_named_key(self, mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.start()
+
+        call_kwargs = mock_listener_cls.call_args[1]
+        on_press = call_kwargs["on_press"]
+
+        on_press(kb.Key.cmd)
+        on_press(kb.Key.f1)
+
+        assert recorder.result == "cmd+f1"
+
+    @patch("hydro_key._hotkey.keyboard.Listener")
+    def test_stop_when_not_started_is_noop(self, _mock_listener_cls: MagicMock):
+        recorder = HotkeyRecorder()
+        recorder.stop()  # should not raise
 
 
 class TestHotkeyListener:
-    def test_raises_on_unknown_hotkey(self):
+    def test_raises_on_invalid_hotkey(self):
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
-        with pytest.raises(ValueError, match="Unknown hotkey"):
-            listener.start("invalid+key")
+        with pytest.raises(ValueError, match="at least one modifier"):
+            listener.start("just_a_key")
 
     @patch("hydro_key._hotkey.keyboard.GlobalHotKeys")
     def test_start_creates_listener(self, mock_hotkeys_cls: MagicMock):
@@ -35,6 +214,8 @@ class TestHotkeyListener:
         listener.start("cmd+shift+w")
 
         mock_hotkeys_cls.assert_called_once()
+        call_args = mock_hotkeys_cls.call_args[0][0]
+        assert "<cmd>+<shift>+w" in call_args
         mock_instance = mock_hotkeys_cls.return_value
         assert mock_instance.daemon is True
         mock_instance.start.assert_called_once()
@@ -53,7 +234,6 @@ class TestHotkeyListener:
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
 
-        # Extract the callback that was passed to GlobalHotKeys
         listener.start("cmd+shift+w")
         call_args = mock_hotkeys_cls.call_args
         hotkey_dict = call_args[0][0]
@@ -88,3 +268,12 @@ class TestHotkeyListener:
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
         listener.stop()  # should not raise
+
+    @patch("hydro_key._hotkey.keyboard.GlobalHotKeys")
+    def test_accepts_freeform_hotkey(self, mock_hotkeys_cls: MagicMock):
+        queue: SimpleQueue[None] = SimpleQueue()
+        listener = HotkeyListener(queue)
+        listener.start("alt+ctrl+f5")
+
+        call_args = mock_hotkeys_cls.call_args[0][0]
+        assert "<alt>+<ctrl>+<f5>" in call_args
