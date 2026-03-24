@@ -47,10 +47,11 @@ class HotkeyListener:
             self._listener = keyboard.GlobalHotKeys(
                 {pynput_key: self._on_activate},
             )
-            self._listener.daemon = True
+            self._listener.daemon = True  # exits with main thread
             self._listener.start()
-        except Exception as exc:
-            logger.warning("Failed to register hotkey %s: %s", hotkey_name, exc)
+        except (OSError, RuntimeError) as exc:
+            self._listener = None
+            logger.exception("Failed to register hotkey %s: %s", hotkey_name, exc)
             if self._on_error:
                 self._on_error(exc)
 

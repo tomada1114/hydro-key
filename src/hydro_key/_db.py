@@ -31,20 +31,25 @@ _lock = threading.Lock()
 def ensure_db(path: Path = DB_PATH) -> None:
     """Create the database directory and table if they do not exist."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with _lock, sqlite3.connect(path) as conn:
-            conn.execute(_CREATE_TABLE)
-    except sqlite3.DatabaseError:
-        logger.warning("Database corrupted, backing up and recreating: %s", path)
-        backup = path.with_suffix(".db.bak")
-        if path.exists():
-            path.rename(backup)
-        with _lock, sqlite3.connect(path) as conn:
-            conn.execute(_CREATE_TABLE)
+    with _lock:
+        try:
+            with sqlite3.connect(path) as conn:
+                conn.execute(_CREATE_TABLE)
+        except sqlite3.DatabaseError:
+            logger.warning("Database corrupted, backing up and recreating: %s", path)
+            backup = path.with_suffix(".db.bak")
+            try:
+                if path.exists():
+                    path.rename(backup)
+                with sqlite3.connect(path) as conn:
+                    conn.execute(_CREATE_TABLE)
+            except (OSError, sqlite3.DatabaseError):
+                logger.exception("Failed to recreate database at %s", path)
+                raise
 
 
 def add_record(amount_ml: int, path: Path = DB_PATH) -> int:
-    """Insert an intake record and return its row id."""
+    """Insert an intake record (UTC timestamp) and return its row id."""
     now = datetime.now(tz=UTC).isoformat()
     with _lock, sqlite3.connect(path) as conn:
         cursor = conn.execute(
@@ -67,4 +72,4 @@ def today_total(path: Path = DB_PATH) -> int:
             "SELECT COALESCE(SUM(amount_ml), 0) FROM intake "
             "WHERE date(timestamp, 'localtime') = date('now', 'localtime')",
         ).fetchone()
-        return int(row[0]) if row else 0
+        return int(row[0])

@@ -63,7 +63,9 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
         self._config = load_config()
         self._last_record_id: int | None = None
-        self._last_interaction: datetime | None = datetime.now(tz=UTC)
+        self._last_interaction: datetime | None = datetime.now(
+            tz=UTC
+        )  # Non-None: suppress reminder on startup
         self._hotkey_queue: SimpleQueue[None] = SimpleQueue()
         self._hotkey_listener = HotkeyListener(
             self._hotkey_queue,
@@ -208,15 +210,23 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
     @rumps.timer(0.1)  # type: ignore[untyped-decorator]  # rumps has no type stubs
     def _drain_hotkey_queue(self, _sender: object) -> None:
-        """Drain hotkey events from the queue (called on main thread)."""
+        """Drain hotkey events and check reminders (100 ms timer, main thread)."""
         try:
             while True:
                 self._hotkey_queue.get_nowait()
-                self._record_intake()
+                try:
+                    self._record_intake()
+                except Exception:
+                    logger.exception("Failed to record intake")
+                    rumps.notification(
+                        title="HydroKey",
+                        subtitle="Error",
+                        message="Failed to save intake record. Check logs.",
+                    )
         except Empty:
             pass
 
-        now = datetime.now(tz=UTC)
+        now = datetime.now(tz=UTC).astimezone()  # local wall-clock for active hours
         if should_fire_reminder(
             now,
             self._last_interaction,
@@ -289,6 +299,7 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         self._hotkey_listener.start(new_hotkey)
 
     def _on_hotkey_error(self, exc: Exception) -> None:
+        logger.error("Hotkey registration failed: %s", exc)
         rumps.notification(
             title="HydroKey",
             subtitle="Hotkey Error",

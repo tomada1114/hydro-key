@@ -56,7 +56,7 @@ def _load_version() -> str:
 
 def run() -> None:
     """Launch the HydroKey menu bar application."""
-    from hydro_key._app import HydroKeyApp  # noqa: PLC0415
+    from hydro_key._app import HydroKeyApp  # noqa: PLC0415  # defer GUI imports
 
     app = HydroKeyApp()
     app.run()

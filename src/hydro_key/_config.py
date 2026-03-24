@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,30 @@ class Config:
     reminder_interval_min: int = 60
     active_start_hour: int = 9
     active_end_hour: int = 21
-    hotkey: str = field(default="cmd+shift+w")
+    hotkey: str = "cmd+shift+w"
+
+    def __post_init__(self) -> None:
+        if self.goal_ml not in GOAL_OPTIONS:
+            msg = f"goal_ml must be one of {GOAL_OPTIONS}, got {self.goal_ml}"
+            raise ValueError(msg)
+        if self.per_press_ml not in PER_PRESS_OPTIONS:
+            msg = f"per_press_ml must be one of {PER_PRESS_OPTIONS}, got {self.per_press_ml}"
+            raise ValueError(msg)
+        if self.reminder_interval_min not in REMINDER_OPTIONS:
+            msg = f"reminder_interval_min must be one of {REMINDER_OPTIONS}, got {self.reminder_interval_min}"
+            raise ValueError(msg)
+        if self.active_start_hour not in ACTIVE_START_OPTIONS:
+            msg = f"active_start_hour must be one of {ACTIVE_START_OPTIONS}, got {self.active_start_hour}"
+            raise ValueError(msg)
+        if self.active_end_hour not in ACTIVE_END_OPTIONS:
+            msg = f"active_end_hour must be one of {ACTIVE_END_OPTIONS}, got {self.active_end_hour}"
+            raise ValueError(msg)
+        if self.hotkey not in HOTKEY_OPTIONS:
+            msg = f"hotkey must be one of {HOTKEY_OPTIONS}, got {self.hotkey}"
+            raise ValueError(msg)
+        if self.active_start_hour >= self.active_end_hour:
+            msg = "active_start_hour must be < active_end_hour"
+            raise ValueError(msg)
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -52,16 +75,17 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     if not isinstance(raw, dict):
         return Config()
 
-    kwargs: dict[str, int | str] = {}
-    defaults = Config()
-    for key in asdict(defaults):
-        if key in raw:
-            kwargs[key] = raw[key]
+    known_keys = {f.name for f in fields(Config)}
+    kwargs = {k: v for k, v in raw.items() if k in known_keys}
 
     try:
-        return Config(**kwargs)  # type: ignore[arg-type]
-    except TypeError:
-        logger.warning("Invalid config data, using defaults")
+        return Config(**kwargs)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid config data (keys=%s), using defaults",
+            list(kwargs.keys()),
+            exc_info=True,
+        )
         return Config()
 
 
@@ -69,8 +93,12 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
     """Atomically save configuration to JSON file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".tmp")
-    tmp_path.write_text(
-        json.dumps(asdict(config), indent=2) + "\n",
-        encoding="utf-8",
-    )
-    tmp_path.rename(path)
+    try:
+        tmp_path.write_text(
+            json.dumps(asdict(config), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.rename(path)
+    except OSError:
+        logger.exception("Failed to save config to %s", path)
+        raise

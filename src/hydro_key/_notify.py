@@ -22,15 +22,24 @@ def play_sound() -> None:
         if sound:
             sound.play()
             return
+        logger.warning(
+            "NSSound.soundNamed_('Glass') returned None; falling back to afplay"
+        )
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["/usr/bin/afplay", "/System/Library/Sounds/Glass.aiff"],
             check=False,
             capture_output=True,
         )
+        if result.returncode != 0:
+            logger.warning(
+                "afplay exited with code %d: %s",
+                result.returncode,
+                result.stderr.decode(errors="replace"),
+            )
     except OSError:
-        logger.warning("Failed to play sound")
+        logger.warning("Failed to play sound via afplay", exc_info=True)
 
 
 def notify_recorded(added_ml: int, total_ml: int, goal_ml: int) -> None:
