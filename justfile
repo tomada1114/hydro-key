@@ -58,8 +58,9 @@ dmg: app
         dist/HydroKey.dmg
     @echo "DMG created: dist/HydroKey.dmg"
 
-# Generate .icns icon from resources/icon.png (1024x1024)
+# Generate .icns icon from resources/icon.png (must be at least 1024x1024)
 icon:
+    @test -f resources/icon.png || (echo "Error: resources/icon.png not found" && exit 1)
     mkdir -p resources/HydroKey.iconset
     sips -z 16 16     resources/icon.png --out resources/HydroKey.iconset/icon_16x16.png
     sips -z 32 32     resources/icon.png --out resources/HydroKey.iconset/icon_16x16@2x.png

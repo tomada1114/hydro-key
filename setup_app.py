@@ -12,24 +12,31 @@ from pathlib import Path
 
 import setuptools.dist
 
+if not hasattr(setuptools.dist.Distribution, "parse_config_files"):
+    raise RuntimeError(
+        "setuptools.dist.Distribution.parse_config_files not found. "
+        "The py2app monkey-patch in setup_app.py is incompatible with this "
+        f"version of setuptools ({setuptools.__version__}). "
+        "Please update setup_app.py."
+    )
+
 _orig_parse = setuptools.dist.Distribution.parse_config_files
 
 
-def _patched_parse(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+def _patched_parse(self, *args, **kwargs):  # type: ignore[no-untyped-def]  # must match setuptools internal signature
     _orig_parse(self, *args, **kwargs)
-    self.install_requires = []  # type: ignore[attr-defined]
+    self.install_requires = []  # type: ignore[attr-defined]  # dynamically populated by setuptools
 
 
-setuptools.dist.Distribution.parse_config_files = _patched_parse  # type: ignore[assignment]
+setuptools.dist.Distribution.parse_config_files = _patched_parse  # type: ignore[assignment]  # intentional monkey-patch for py2app compat
 
-import py2app  # noqa: E402, F401  # registers the py2app command
-from setuptools import setup  # type: ignore[import-untyped]  # noqa: E402
+import py2app  # noqa: E402, F401, I001  # must import after monkey-patch; registers the py2app command with setuptools
+from setuptools import setup  # type: ignore[import-untyped]  # noqa: E402  # py2app re-exports lack type info
 
 _pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 _version: str = _pyproject["project"]["version"]
 
 APP = ["src/hydro_key/_entry.py"]
-DATA_FILES: list[str] = []
 
 _icon_path = Path("resources/HydroKey.icns")
 
@@ -44,7 +51,7 @@ OPTIONS: dict[str, object] = {
         "LSUIElement": True,
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "13.0",
-        "NSAppleEventsUsageDescription": (
+        "NSAccessibilityUsageDescription": (
             "HydroKey needs accessibility access for global hotkeys."
         ),
     },
@@ -52,12 +59,14 @@ OPTIONS: dict[str, object] = {
     "includes": ["objc", "AppKit", "Foundation", "Quartz"],
 }
 
-if _icon_path.exists():
-    OPTIONS["iconfile"] = str(_icon_path)
+if not _icon_path.exists():
+    raise FileNotFoundError(
+        f"Icon file not found: {_icon_path}. Run 'just icon' to generate it."
+    )
+OPTIONS["iconfile"] = str(_icon_path)
 
 setup(
     name="HydroKey",
     app=APP,
-    data_files=DATA_FILES,
     options={"py2app": OPTIONS},
 )
