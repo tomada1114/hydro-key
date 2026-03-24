@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,13 +22,13 @@ class TestIsWithinActiveHours:
         ],
     )
     def test_default_hours(self, hour: int, expected: bool):
-        now = datetime(2026, 3, 24, hour, 30)
+        now = datetime(2026, 3, 24, hour, 30, tzinfo=UTC)
         assert is_within_active_hours(now, 9, 21) is expected
 
 
 class TestShouldFireReminder:
     def _make_now(self, hour: int = 12, minute: int = 0) -> datetime:
-        return datetime(2026, 3, 24, hour, minute)
+        return datetime(2026, 3, 24, hour, minute, tzinfo=UTC)
 
     def test_disabled_when_interval_zero(self):
         assert not should_fire_reminder(self._make_now(), None, 0, 9, 21)

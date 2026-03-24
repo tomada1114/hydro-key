@@ -37,7 +37,14 @@ Issues = "https://github.com/tomada/hydro-key/issues"
 Changelog = "https://github.com/tomada/hydro-key/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["mypy>=1.10", "pre-commit>=3.7", "pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.11"]
+dev = [
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.11",
+    "vulture>=2.15",
+]
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.25"]
 
 # --------------------------------------------------------------------------- #
@@ -81,6 +88,8 @@ select = [
     # --- Performance ---
     "PERF", # perflint
     "FURB", # refurb
+    # --- Datetime safety ---
+    "DTZ",  # flake8-datetimez
     # --- Type checking ---
     "TCH",  # flake8-type-checking
     # --- Style ---

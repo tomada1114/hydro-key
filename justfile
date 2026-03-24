@@ -23,6 +23,7 @@ lint:
     uv run ruff check .
     uv run ruff format --check .
     uv run mypy src scripts
+    uv run vulture src/ --ignore-names "state,menu" --ignore-decorators "@rumps.*"
 
 # Run tests with coverage
 test:
