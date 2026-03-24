@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from hydro_key._config import HOTKEY_OPTIONS
 from hydro_key._hotkey import HOTKEY_MAP, HotkeyListener
 
 
@@ -15,6 +16,9 @@ class TestHotkeyMap:
         for name, pynput_key in HOTKEY_MAP.items():
             assert "+" in name
             assert "<" in pynput_key
+
+    def test_hotkey_map_matches_config_options(self):
+        assert set(HOTKEY_MAP.keys()) == set(HOTKEY_OPTIONS)
 
 
 class TestHotkeyListener:

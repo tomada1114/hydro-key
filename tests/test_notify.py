@@ -28,6 +28,15 @@ class TestPlaySound:
             capture_output=True,
         )
 
+    @patch("hydro_key._notify.subprocess.run")
+    @patch("hydro_key._notify._NSSound")
+    def test_nssound_returns_none_falls_back_to_subprocess(
+        self, mock_nssound_cls: MagicMock, mock_run: MagicMock
+    ):
+        mock_nssound_cls.soundNamed_.return_value = None
+        play_sound()
+        mock_run.assert_called_once()
+
 
 class TestNotifications:
     @patch("hydro_key._notify.rumps")

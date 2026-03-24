@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -75,3 +77,12 @@ class TestTodayTotal:
         add_record(200, db_path)
         add_record(500, db_path)
         assert today_total(db_path) == 800
+
+    def test_excludes_yesterday_records(self, db_path: Path):
+        yesterday = (datetime.now(tz=UTC) - timedelta(days=1)).isoformat()
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO intake (timestamp, amount_ml) VALUES (?, ?)",
+                (yesterday, 500),
+            )
+        assert today_total(db_path) == 0

@@ -108,6 +108,38 @@ class TestSaveConfig:
         assert not tmp_file.exists()
 
 
+class TestConfigValidation:
+    def test_rejects_invalid_goal(self):
+        with pytest.raises(ValueError, match="goal_ml"):
+            Config(goal_ml=-1)
+
+    def test_rejects_invalid_per_press(self):
+        with pytest.raises(ValueError, match="per_press_ml"):
+            Config(per_press_ml=999)
+
+    def test_rejects_invalid_reminder(self):
+        with pytest.raises(ValueError, match="reminder_interval_min"):
+            Config(reminder_interval_min=999)
+
+    def test_rejects_invalid_hotkey(self):
+        with pytest.raises(ValueError, match="hotkey"):
+            Config(hotkey="invalid")
+
+    def test_rejects_invalid_active_start(self):
+        with pytest.raises(ValueError, match="active_start_hour"):
+            Config(active_start_hour=5)
+
+    def test_rejects_invalid_active_end(self):
+        with pytest.raises(ValueError, match="active_end_hour"):
+            Config(active_end_hour=17)
+
+    def test_load_config_falls_back_on_invalid_values(self, config_path: Path):
+        data = {"goal_ml": -100}
+        config_path.write_text(json.dumps(data), encoding="utf-8")
+        cfg = load_config(config_path)
+        assert cfg == Config()
+
+
 class TestHotkeyOptions:
     def test_default_hotkey_in_options(self):
         assert Config().hotkey in HOTKEY_OPTIONS
