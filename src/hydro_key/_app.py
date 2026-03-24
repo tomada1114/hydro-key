@@ -18,19 +18,16 @@ from hydro_key._config import (
     ACTIVE_START_OPTIONS,
     APP_DIR,
     GOAL_OPTIONS,
+    KEY_OPTIONS,
+    MODIFIER_DISPLAY,
+    MODIFIER_OPTIONS,
     PER_PRESS_OPTIONS,
     REMINDER_OPTIONS,
     load_config,
     save_config,
 )
 from hydro_key._db import add_record, delete_record, ensure_db, today_total
-from hydro_key._hotkey import HotkeyListener, HotkeyRecorder, validate_hotkey
-from hydro_key._notify import (
-    notify_recorded,
-    notify_reminder,
-    notify_undo,
-    play_sound,
-)
+from hydro_key._hotkey import _MODIFIER_ORDER, HotkeyListener, validate_hotkey
 from hydro_key._reminder import should_fire_reminder
 
 logger = logging.getLogger(__name__)
@@ -125,13 +122,28 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             fmt=lambda v: f"{v}:00",
         )
         hotkey_menu = rumps.MenuItem("Hotkey")
-        self._record_item = rumps.MenuItem(
-            "Record Hotkey...", callback=self._on_record_hotkey
-        )
-        self._current_hotkey_item = rumps.MenuItem(f"Current: {self._config.hotkey}")
-        self._current_hotkey_item.set_callback(None)
-        hotkey_menu.add(self._record_item)
-        hotkey_menu.add(self._current_hotkey_item)
+        current_modifiers, current_key = self._parse_current_hotkey()
+
+        modifier_menu = rumps.MenuItem("Modifier")
+        self._modifier_items: dict[str, rumps.MenuItem] = {}
+        for mod in MODIFIER_OPTIONS:
+            label = MODIFIER_DISPLAY[mod]
+            item = rumps.MenuItem(label, callback=self._on_modifier)
+            item.state = 1 if mod in current_modifiers else 0
+            modifier_menu.add(item)
+            self._modifier_items[label] = item
+
+        key_menu = rumps.MenuItem("Key")
+        self._key_items: dict[str, rumps.MenuItem] = {}
+        for key in KEY_OPTIONS:
+            label = key.upper()
+            item = rumps.MenuItem(label, callback=self._on_key)
+            item.state = 1 if key == current_key else 0
+            key_menu.add(item)
+            self._key_items[label] = item
+
+        hotkey_menu.add(modifier_menu)
+        hotkey_menu.add(key_menu)
 
         quit_item = rumps.MenuItem("Quit", callback=self._on_quit)
 
@@ -214,18 +226,13 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             self._config.active_end_hour,
         ):
             self._last_interaction = now
-            total = today_total()
-            notify_reminder(total, self._config.goal_ml)
 
     def _record_intake(self) -> None:
         amount = self._config.per_press_ml
         record_id = add_record(amount)
         self._last_record_id = record_id
         self._last_interaction = datetime.now(tz=UTC)
-        total = self._update_title()
-
-        play_sound()
-        notify_recorded(amount, total, self._config.goal_ml)
+        self._update_title()
 
         # Enable undo
         self._undo_item.set_callback(self._on_undo)
@@ -234,13 +241,10 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         if self._last_record_id is None:
             return
 
-        amount = self._config.per_press_ml
         delete_record(self._last_record_id)
         self._last_record_id = None
         self._last_interaction = datetime.now(tz=UTC)
-        total = self._update_title()
-
-        notify_undo(amount, total, self._config.goal_ml)
+        self._update_title()
 
         # Disable undo
         self._undo_item.set_callback(None)
@@ -270,36 +274,58 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         self._update_checkmarks_int("Active End", self._config.active_end_hour)
         self._save_and_update()
 
-    def _on_record_hotkey(self, _sender: object) -> None:
-        # Stop the active hotkey listener so it doesn't fire during recording.
-        self._hotkey_listener.stop()
+    def _parse_current_hotkey(self) -> tuple[set[str], str]:
+        """Extract modifier set and trigger key from the current hotkey string."""
+        parts = [p.strip().lower() for p in self._config.hotkey.split("+")]
+        modifiers = {p for p in parts if p in MODIFIER_OPTIONS}
+        keys = [p for p in parts if p not in MODIFIER_OPTIONS]
+        return modifiers, keys[0] if keys else "w"
 
-        recorder = HotkeyRecorder()
-        recorder.start()
-        try:
-            window = rumps.Window(
-                title="Record Hotkey",
-                message="Press your desired key combination, then click OK.",
-                default_text=self._config.hotkey,
-                cancel=True,
-            )
-            response = window.run()
-        finally:
-            recorder.stop()
+    def _build_hotkey_from_ui(self) -> str:
+        """Build a hotkey string from the current UI checkmark state."""
+        # Reverse display map: "Cmd" -> "cmd"
+        display_to_internal = {v: k for k, v in MODIFIER_DISPLAY.items()}
+        modifiers = sorted(
+            (
+                display_to_internal[label]
+                for label, item in self._modifier_items.items()
+                if item.state
+            ),
+            key=_MODIFIER_ORDER.index,
+        )
+        key = next(
+            (label.lower() for label, item in self._key_items.items() if item.state),
+            "w",
+        )
+        return "+".join([*modifiers, key])
 
-        if not response.clicked:
-            # Cancelled — re-register the current hotkey.
-            self._hotkey_listener.start(self._config.hotkey)
-            return
+    def _on_modifier(self, sender: rumps.MenuItem) -> None:
+        # Toggle
+        sender.state = 0 if sender.state else 1
 
-        new_hotkey = recorder.result
-        if new_hotkey is None:
+        # Must have at least one modifier
+        any_checked = any(item.state for item in self._modifier_items.values())
+        if not any_checked:
+            sender.state = 1
             rumps.alert(
-                title="No Hotkey Detected",
-                message="No key combination was detected. Please try again.",
+                title="Invalid Hotkey",
+                message="At least one modifier key is required.",
             )
             return
 
+        self._apply_hotkey_change()
+
+    def _on_key(self, sender: rumps.MenuItem) -> None:
+        # Single-select: uncheck all, check selected
+        for item in self._key_items.values():
+            item.state = 0
+        sender.state = 1
+
+        self._apply_hotkey_change()
+
+    def _apply_hotkey_change(self) -> None:
+        """Rebuild hotkey from UI state, validate, save, and restart listener."""
+        new_hotkey = self._build_hotkey_from_ui()
         try:
             validate_hotkey(new_hotkey)
         except ValueError as exc:
@@ -307,7 +333,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             return
 
         self._config.hotkey = new_hotkey
-        self._current_hotkey_item.title = f"Current: {new_hotkey}"
         self._save_and_update()
         self._hotkey_listener.start(new_hotkey)
 

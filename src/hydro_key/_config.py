@@ -18,6 +18,15 @@ REMINDER_OPTIONS: list[int] = [0, 30, 45, 60, 90]
 ACTIVE_START_OPTIONS: list[int] = list(range(6, 13))
 ACTIVE_END_OPTIONS: list[int] = list(range(18, 24))
 
+MODIFIER_OPTIONS: list[str] = ["cmd", "ctrl", "alt", "shift"]
+MODIFIER_DISPLAY: dict[str, str] = {
+    "cmd": "Cmd",
+    "ctrl": "Ctrl",
+    "alt": "Opt",
+    "shift": "Shift",
+}
+KEY_OPTIONS: list[str] = [chr(c) for c in range(ord("a"), ord("z") + 1)]
+
 
 @dataclass
 class Config:
