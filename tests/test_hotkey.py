@@ -82,55 +82,47 @@ class TestHotkeyListener:
         with pytest.raises(ValueError, match="at least one modifier"):
             listener.start("just_a_key")
 
-    @patch("hydro_key._hotkey.keyboard.Listener")
-    @patch("hydro_key._hotkey.keyboard.HotKey")
-    def test_start_creates_listener(
-        self, mock_hotkey_cls: MagicMock, mock_listener_cls: MagicMock
-    ):
+    @patch("hydro_key._hotkey._import_keyboard")
+    def test_start_creates_listener(self, mock_import_kb: MagicMock):
+        mock_kb = mock_import_kb.return_value
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
         listener.start("cmd+shift+w")
 
-        mock_hotkey_cls.assert_called_once()
-        mock_listener_cls.assert_called_once()
-        mock_instance = mock_listener_cls.return_value
+        mock_kb.HotKey.assert_called_once()
+        mock_kb.Listener.assert_called_once()
+        mock_instance = mock_kb.Listener.return_value
         assert mock_instance.daemon is True
         mock_instance.start.assert_called_once()
 
-    @patch("hydro_key._hotkey.keyboard.Listener")
-    @patch("hydro_key._hotkey.keyboard.HotKey")
-    def test_stop_stops_listener(
-        self, _mock_hotkey_cls: MagicMock, mock_listener_cls: MagicMock
-    ):
+    @patch("hydro_key._hotkey._import_keyboard")
+    def test_stop_stops_listener(self, mock_import_kb: MagicMock):
+        mock_kb = mock_import_kb.return_value
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
         listener.start("cmd+shift+w")
         listener.stop()
 
-        mock_listener_cls.return_value.stop.assert_called_once()
+        mock_kb.Listener.return_value.stop.assert_called_once()
 
-    @patch("hydro_key._hotkey.keyboard.Listener")
-    @patch("hydro_key._hotkey.keyboard.HotKey")
-    def test_on_activate_pushes_to_queue(
-        self, mock_hotkey_cls: MagicMock, _mock_listener_cls: MagicMock
-    ):
+    @patch("hydro_key._hotkey._import_keyboard")
+    def test_on_activate_pushes_to_queue(self, mock_import_kb: MagicMock):
+        mock_kb = mock_import_kb.return_value
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
 
         listener.start("cmd+shift+w")
         # The on_activate callback is the second arg to HotKey()
-        callback = mock_hotkey_cls.call_args[0][1]
+        callback = mock_kb.HotKey.call_args[0][1]
 
         assert queue.empty()
         callback()
         assert not queue.empty()
 
-    @patch("hydro_key._hotkey.keyboard.Listener")
-    @patch("hydro_key._hotkey.keyboard.HotKey")
-    def test_calls_on_error_when_registration_fails(
-        self, _mock_hotkey_cls: MagicMock, mock_listener_cls: MagicMock
-    ):
-        mock_listener_cls.side_effect = RuntimeError("no accessibility")
+    @patch("hydro_key._hotkey._import_keyboard")
+    def test_calls_on_error_when_registration_fails(self, mock_import_kb: MagicMock):
+        mock_kb = mock_import_kb.return_value
+        mock_kb.Listener.side_effect = RuntimeError("no accessibility")
         errors: list[Exception] = []
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue, on_error=errors.append)
@@ -139,15 +131,13 @@ class TestHotkeyListener:
         assert len(errors) == 1
         assert "no accessibility" in str(errors[0])
 
-    @patch("hydro_key._hotkey.keyboard.Listener")
-    @patch("hydro_key._hotkey.keyboard.HotKey")
-    def test_start_stops_previous_listener(
-        self, _mock_hotkey_cls: MagicMock, mock_listener_cls: MagicMock
-    ):
+    @patch("hydro_key._hotkey._import_keyboard")
+    def test_start_stops_previous_listener(self, mock_import_kb: MagicMock):
+        mock_kb = mock_import_kb.return_value
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
         listener.start("cmd+shift+w")
-        first_instance = mock_listener_cls.return_value
+        first_instance = mock_kb.Listener.return_value
 
         listener.start("cmd+shift+h")
         first_instance.stop.assert_called_once()
@@ -157,13 +147,11 @@ class TestHotkeyListener:
         listener = HotkeyListener(queue)
         listener.stop()  # should not raise
 
-    @patch("hydro_key._hotkey.keyboard.Listener")
-    @patch("hydro_key._hotkey.keyboard.HotKey")
-    def test_accepts_freeform_hotkey(
-        self, mock_hotkey_cls: MagicMock, _mock_listener_cls: MagicMock
-    ):
+    @patch("hydro_key._hotkey._import_keyboard")
+    def test_accepts_freeform_hotkey(self, mock_import_kb: MagicMock):
+        mock_kb = mock_import_kb.return_value
         queue: SimpleQueue[None] = SimpleQueue()
         listener = HotkeyListener(queue)
         listener.start("alt+ctrl+f5")
 
-        mock_hotkey_cls.parse.assert_called_with("<alt>+<ctrl>+<f5>")
+        mock_kb.HotKey.parse.assert_called_with("<alt>+<ctrl>+<f5>")

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
-from pynput import keyboard
+from typing import TYPE_CHECKING, Any
 
 from hydro_key._config import MODIFIER_OPTIONS
 
@@ -14,6 +12,14 @@ if TYPE_CHECKING:
     from queue import SimpleQueue
 
 logger = logging.getLogger(__name__)
+
+
+def _import_keyboard() -> Any:
+    """Lazily import pynput.keyboard to avoid X11 errors on headless Linux."""
+    from pynput import keyboard  # noqa: PLC0415
+
+    return keyboard
+
 
 MODIFIER_KEYS: frozenset[str] = frozenset(MODIFIER_OPTIONS)
 
@@ -71,25 +77,26 @@ class HotkeyListener:
     ) -> None:
         self._queue = queue
         self._on_error = on_error
-        self._listener: keyboard.Listener | None = None
+        self._listener: Any = None
 
     def start(self, hotkey: str) -> None:
         """Start listening for the specified hotkey."""
         self.stop()
 
         pynput_key = parse_hotkey(hotkey)
+        kb = _import_keyboard()
 
         try:
-            hotkey_obj = keyboard.HotKey(
-                keyboard.HotKey.parse(pynput_key),
+            hotkey_obj = kb.HotKey(
+                kb.HotKey.parse(pynput_key),
                 self._on_activate,
             )
-            self._listener = keyboard.Listener(
+            self._listener = kb.Listener(
                 on_press=lambda key, *_args: hotkey_obj.press(
-                    self._listener.canonical(key)  # type: ignore[union-attr]
+                    self._listener.canonical(key)
                 ),
                 on_release=lambda key, *_args: hotkey_obj.release(
-                    self._listener.canonical(key)  # type: ignore[union-attr]
+                    self._listener.canonical(key)
                 ),
             )
             self._listener.daemon = True  # exits with main thread
