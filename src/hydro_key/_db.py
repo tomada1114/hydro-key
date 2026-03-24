@@ -6,12 +6,16 @@ import logging
 import sqlite3
 import threading
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+from hydro_key._config import APP_DIR
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DB_DIR = Path.home() / ".config" / "hydrokey"
-DB_PATH = DB_DIR / "hydrokey.db"
+DB_PATH = APP_DIR / "hydrokey.db"
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS intake (
@@ -64,14 +68,3 @@ def today_total(path: Path = DB_PATH) -> int:
             "WHERE date(timestamp, 'localtime') = date('now', 'localtime')",
         ).fetchone()
         return int(row[0]) if row else 0
-
-
-def last_record_id(path: Path = DB_PATH) -> int | None:
-    """Return the id of the most recent intake record today, or None."""
-    with _lock, sqlite3.connect(path) as conn:
-        row = conn.execute(
-            "SELECT id FROM intake "
-            "WHERE date(timestamp, 'localtime') = date('now', 'localtime') "
-            "ORDER BY id DESC LIMIT 1",
-        ).fetchone()
-        return int(row[0]) if row else None

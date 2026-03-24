@@ -8,20 +8,19 @@ from hydro_key._notify import notify_recorded, notify_reminder, notify_undo, pla
 
 
 class TestPlaySound:
-    @patch("hydro_key._notify.NSSound", create=True)
+    @patch("hydro_key._notify._NSSound")
     def test_appkit_path(self, mock_nssound_cls: MagicMock):
         mock_sound = MagicMock()
         mock_nssound_cls.soundNamed_.return_value = mock_sound
 
-        with patch.dict("sys.modules", {"AppKit": MagicMock(NSSound=mock_nssound_cls)}):
-            play_sound()
+        play_sound()
 
         mock_sound.play.assert_called_once()
 
     @patch("hydro_key._notify.subprocess.run")
+    @patch("hydro_key._notify._NSSound", None)
     def test_subprocess_fallback(self, mock_run: MagicMock):
-        with patch.dict("sys.modules", {"AppKit": None}):
-            play_sound()
+        play_sound()
 
         mock_run.assert_called_once_with(
             ["/usr/bin/afplay", "/System/Library/Sounds/Glass.aiff"],

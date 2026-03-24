@@ -9,18 +9,19 @@ import rumps
 
 logger = logging.getLogger(__name__)
 
+try:
+    from AppKit import NSSound as _NSSound
+except ImportError:
+    _NSSound = None
+
 
 def play_sound() -> None:
     """Play the Glass system sound."""
-    try:
-        from AppKit import NSSound  # noqa: PLC0415
-
-        sound = NSSound.soundNamed_("Glass")
+    if _NSSound is not None:
+        sound = _NSSound.soundNamed_("Glass")
         if sound:
             sound.play()
             return
-    except ImportError:
-        pass
 
     try:
         subprocess.run(

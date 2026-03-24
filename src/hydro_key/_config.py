@@ -9,8 +9,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-CONFIG_DIR = Path.home() / ".config" / "hydrokey"
-CONFIG_PATH = CONFIG_DIR / "config.json"
+APP_DIR = Path.home() / ".config" / "hydrokey"
+CONFIG_PATH = APP_DIR / "config.json"
 
 GOAL_OPTIONS: list[int] = [1000, 1500, 2000, 2500, 3000]
 PER_PRESS_OPTIONS: list[int] = [50, 100, 150, 200, 250, 300, 500]

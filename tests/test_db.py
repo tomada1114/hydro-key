@@ -13,7 +13,6 @@ from hydro_key._db import (
     add_record,
     delete_record,
     ensure_db,
-    last_record_id,
     today_total,
 )
 
@@ -76,19 +75,3 @@ class TestTodayTotal:
         add_record(200, db_path)
         add_record(500, db_path)
         assert today_total(db_path) == 800
-
-
-class TestLastRecordId:
-    def test_none_when_empty(self, db_path: Path):
-        assert last_record_id(db_path) is None
-
-    def test_returns_most_recent_id(self, db_path: Path):
-        add_record(100, db_path)
-        expected = add_record(200, db_path)
-        assert last_record_id(db_path) == expected
-
-    def test_updates_after_delete(self, db_path: Path):
-        first = add_record(100, db_path)
-        second = add_record(200, db_path)
-        delete_record(second, db_path)
-        assert last_record_id(db_path) == first

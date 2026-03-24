@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 from queue import Empty, SimpleQueue
 from typing import TYPE_CHECKING
 
@@ -17,6 +16,7 @@ if TYPE_CHECKING:
 from hydro_key._config import (
     ACTIVE_END_OPTIONS,
     ACTIVE_START_OPTIONS,
+    APP_DIR,
     GOAL_OPTIONS,
     HOTKEY_OPTIONS,
     PER_PRESS_OPTIONS,
@@ -39,10 +39,9 @@ logger = logging.getLogger(__name__)
 
 def _setup_logging() -> None:
     """Configure logging to file with rotation."""
-    log_dir = Path.home() / ".config" / "hydrokey"
-    log_dir.mkdir(parents=True, exist_ok=True)
+    APP_DIR.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(
-        log_dir / "hydrokey.log",
+        APP_DIR / "hydrokey.log",
         maxBytes=1_000_000,
         backupCount=3,
     )
@@ -64,17 +63,15 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
         self._config = load_config()
         self._last_record_id: int | None = None
-        self._last_interaction: datetime | None = datetime.now()
+        self._last_interaction: datetime | None = datetime.now(tz=UTC)
         self._hotkey_queue: SimpleQueue[None] = SimpleQueue()
         self._hotkey_listener = HotkeyListener(
             self._hotkey_queue,
             on_error=self._on_hotkey_error,
         )
 
-        # Typed mappings to avoid monkey-patching rumps.MenuItem
         self._submenus: dict[str, rumps.MenuItem] = {}
         self._int_values: dict[str, int] = {}
-        self._str_values: dict[str, str] = {}
 
         self._build_menu()
         self._update_title()
@@ -179,7 +176,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         parent = rumps.MenuItem(title)
         for opt in options:
             item = rumps.MenuItem(opt, callback=callback)
-            self._str_values[opt] = opt
             item.state = 1 if opt == current else 0
             parent.add(item)
         self._submenus[title] = parent
@@ -195,21 +191,20 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         """Update checkmarks in a string submenu."""
         parent = self._submenus[parent_title]
         for item in parent.values():
-            item.state = 1 if self._str_values.get(item.title) == new_value else 0
+            item.state = 1 if item.title == new_value else 0
 
-    def _update_title(self) -> None:
-        """Update the menu bar title with current intake."""
+    def _update_title(self) -> int:
+        """Update the menu bar title with current intake and return the total."""
         total = today_total()
         goal = self._config.goal_ml
         icon = "\u2705" if total >= goal else "\U0001f4a7"
         self.title = f"{icon} {total}ml"
         self._today_item.title = f"Today: {total}ml"
+        return total
 
     def _save_and_update(self) -> None:
         save_config(self._config)
         self._update_title()
-
-    # --- Hotkey queue drain (runs on main thread via rumps.Timer) ---
 
     @rumps.timer(0.1)  # type: ignore[untyped-decorator]  # rumps has no type stubs
     def _drain_hotkey_queue(self, _sender: object) -> None:
@@ -221,8 +216,7 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         except Empty:
             pass
 
-        # Check reminders
-        now = datetime.now()
+        now = datetime.now(tz=UTC)
         if should_fire_reminder(
             now,
             self._last_interaction,
@@ -234,16 +228,13 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             total = today_total()
             notify_reminder(total, self._config.goal_ml)
 
-    # --- Actions ---
-
     def _record_intake(self) -> None:
         amount = self._config.per_press_ml
         record_id = add_record(amount)
         self._last_record_id = record_id
-        self._last_interaction = datetime.now()
-        self._update_title()
+        self._last_interaction = datetime.now(tz=UTC)
+        total = self._update_title()
 
-        total = today_total()
         play_sound()
         notify_recorded(amount, total, self._config.goal_ml)
 
@@ -257,16 +248,13 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         amount = self._config.per_press_ml
         delete_record(self._last_record_id)
         self._last_record_id = None
-        self._last_interaction = datetime.now()
-        self._update_title()
+        self._last_interaction = datetime.now(tz=UTC)
+        total = self._update_title()
 
-        total = today_total()
         notify_undo(amount, total, self._config.goal_ml)
 
         # Disable undo
         self._undo_item.set_callback(None)
-
-    # --- Settings callbacks ---
 
     def _on_goal(self, sender: rumps.MenuItem) -> None:
         self._config.goal_ml = self._int_values[sender.title]
@@ -294,7 +282,7 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         self._save_and_update()
 
     def _on_hotkey(self, sender: rumps.MenuItem) -> None:
-        new_hotkey = self._str_values[sender.title]
+        new_hotkey = sender.title
         self._config.hotkey = new_hotkey
         self._update_checkmarks_str("Hotkey", new_hotkey)
         self._save_and_update()
