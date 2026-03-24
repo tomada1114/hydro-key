@@ -201,10 +201,8 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         """Update the menu bar title with current intake."""
         total = today_total()
         goal = self._config.goal_ml
-        if total >= goal:
-            self.title = f"\u2705 {total}ml / {goal}ml"
-        else:
-            self.title = f"\U0001f4a7 {total}ml / {goal}ml"
+        icon = "\u2705" if total >= goal else "\U0001f4a7"
+        self.title = f"{icon} {total}ml"
         self._today_item.title = f"Today: {total}ml"
 
     def _save_and_update(self) -> None:
