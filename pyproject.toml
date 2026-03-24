@@ -22,7 +22,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "rumps>=0.4",
+    "rumps>=0.4; sys_platform == 'darwin'",
     "pynput>=1.7",
 ]
 

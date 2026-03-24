@@ -272,7 +272,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "pynput" },
-    { name = "rumps" },
+    { name = "rumps", marker = "sys_platform == 'darwin'" },
 ]
 
 [package.dev-dependencies]
@@ -292,7 +292,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "pynput", specifier = ">=1.7" },
-    { name = "rumps", specifier = ">=0.4" },
+    { name = "rumps", marker = "sys_platform == 'darwin'", specifier = ">=0.4" },
 ]
 
 [package.metadata.requires-dev]
