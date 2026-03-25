@@ -14,9 +14,6 @@ CONFIG_PATH = APP_DIR / "config.json"
 
 GOAL_OPTIONS: list[int] = [1000, 1500, 2000, 2500, 3000]
 PER_PRESS_OPTIONS: list[int] = [50, 100, 150, 200, 250, 300, 500]
-REMINDER_OPTIONS: list[int] = [0, 30, 45, 60, 90]
-ACTIVE_START_OPTIONS: list[int] = list(range(6, 13))
-ACTIVE_END_OPTIONS: list[int] = list(range(18, 24))
 
 MODIFIER_OPTIONS: list[str] = ["cmd", "ctrl", "alt", "shift"]
 MODIFIER_DISPLAY: dict[str, str] = {
@@ -34,9 +31,6 @@ class Config:
 
     goal_ml: int = 2000
     per_press_ml: int = 100
-    reminder_interval_min: int = 60
-    active_start_hour: int = 9
-    active_end_hour: int = 21
     hotkey: str = "cmd+shift+w"
 
     def __post_init__(self) -> None:
@@ -46,21 +40,9 @@ class Config:
         if self.per_press_ml not in PER_PRESS_OPTIONS:
             msg = f"per_press_ml must be one of {PER_PRESS_OPTIONS}, got {self.per_press_ml}"
             raise ValueError(msg)
-        if self.reminder_interval_min not in REMINDER_OPTIONS:
-            msg = f"reminder_interval_min must be one of {REMINDER_OPTIONS}, got {self.reminder_interval_min}"
-            raise ValueError(msg)
-        if self.active_start_hour not in ACTIVE_START_OPTIONS:
-            msg = f"active_start_hour must be one of {ACTIVE_START_OPTIONS}, got {self.active_start_hour}"
-            raise ValueError(msg)
-        if self.active_end_hour not in ACTIVE_END_OPTIONS:
-            msg = f"active_end_hour must be one of {ACTIVE_END_OPTIONS}, got {self.active_end_hour}"
-            raise ValueError(msg)
         from hydro_key._hotkey import validate_hotkey  # noqa: PLC0415
 
         validate_hotkey(self.hotkey)
-        if self.active_start_hour >= self.active_end_hour:
-            msg = "active_start_hour must be < active_end_hour"
-            raise ValueError(msg)
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:

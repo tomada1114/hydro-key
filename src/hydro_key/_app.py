@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from queue import Empty, SimpleQueue
 from typing import TYPE_CHECKING
@@ -14,21 +13,17 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from hydro_key._config import (
-    ACTIVE_END_OPTIONS,
-    ACTIVE_START_OPTIONS,
     APP_DIR,
     GOAL_OPTIONS,
     KEY_OPTIONS,
     MODIFIER_DISPLAY,
     MODIFIER_OPTIONS,
     PER_PRESS_OPTIONS,
-    REMINDER_OPTIONS,
     load_config,
     save_config,
 )
 from hydro_key._db import add_record, delete_record, ensure_db, today_total
 from hydro_key._hotkey import HotkeyListener, validate_hotkey
-from hydro_key._reminder import should_fire_reminder
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +54,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
         self._config = load_config()
         self._last_record_id: int | None = None
-        self._last_interaction: datetime | None = datetime.now(
-            tz=UTC
-        )  # Non-None: suppress reminder on startup
         self._hotkey_queue: SimpleQueue[None] = SimpleQueue()
         self._hotkey_listener = HotkeyListener(
             self._hotkey_queue,
@@ -100,27 +92,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             self._on_per_press,
             fmt=lambda v: f"{v}ml",
         )
-        reminder_menu = self._make_int_submenu(
-            "Reminder",
-            REMINDER_OPTIONS,
-            self._config.reminder_interval_min,
-            self._on_reminder,
-            fmt=lambda v: "OFF" if v == 0 else f"{v}min",
-        )
-        active_start_menu = self._make_int_submenu(
-            "Active Start",
-            ACTIVE_START_OPTIONS,
-            self._config.active_start_hour,
-            self._on_active_start,
-            fmt=lambda v: f"{v}:00",
-        )
-        active_end_menu = self._make_int_submenu(
-            "Active End",
-            ACTIVE_END_OPTIONS,
-            self._config.active_end_hour,
-            self._on_active_end,
-            fmt=lambda v: f"{v}:00",
-        )
         hotkey_menu = rumps.MenuItem("Hotkey")
         current_modifiers, current_key = self._parse_current_hotkey()
 
@@ -151,9 +122,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
             None,  # separator
             goal_menu,
             per_press_menu,
-            reminder_menu,
-            active_start_menu,
-            active_end_menu,
             hotkey_menu,
             None,  # separator
             quit_item,
@@ -199,7 +167,7 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
     @rumps.timer(0.1)  # type: ignore[untyped-decorator]  # rumps has no type stubs
     def _drain_hotkey_queue(self, _sender: object) -> None:
-        """Drain hotkey events and check reminders (100 ms timer, main thread)."""
+        """Drain hotkey events (100 ms timer, main thread)."""
         try:
             while True:
                 self._hotkey_queue.get_nowait()
@@ -215,21 +183,10 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
         except Empty:
             pass
 
-        now = datetime.now(tz=UTC).astimezone()  # local wall-clock for active hours
-        if should_fire_reminder(
-            now,
-            self._last_interaction,
-            self._config.reminder_interval_min,
-            self._config.active_start_hour,
-            self._config.active_end_hour,
-        ):
-            self._last_interaction = now
-
     def _record_intake(self) -> None:
         amount = self._config.per_press_ml
         record_id = add_record(amount)
         self._last_record_id = record_id
-        self._last_interaction = datetime.now(tz=UTC)
         self._update_title()
 
         # Enable undo
@@ -241,7 +198,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
 
         delete_record(self._last_record_id)
         self._last_record_id = None
-        self._last_interaction = datetime.now(tz=UTC)
         self._update_title()
 
         # Disable undo
@@ -255,21 +211,6 @@ class HydroKeyApp(rumps.App):  # type: ignore[misc]  # rumps has no type stubs
     def _on_per_press(self, sender: rumps.MenuItem) -> None:
         self._config.per_press_ml = self._int_values[sender.title]
         self._update_checkmarks_int("Per Press", self._config.per_press_ml)
-        self._save_and_update()
-
-    def _on_reminder(self, sender: rumps.MenuItem) -> None:
-        self._config.reminder_interval_min = self._int_values[sender.title]
-        self._update_checkmarks_int("Reminder", self._config.reminder_interval_min)
-        self._save_and_update()
-
-    def _on_active_start(self, sender: rumps.MenuItem) -> None:
-        self._config.active_start_hour = self._int_values[sender.title]
-        self._update_checkmarks_int("Active Start", self._config.active_start_hour)
-        self._save_and_update()
-
-    def _on_active_end(self, sender: rumps.MenuItem) -> None:
-        self._config.active_end_hour = self._int_values[sender.title]
-        self._update_checkmarks_int("Active End", self._config.active_end_hour)
         self._save_and_update()
 
     def _parse_current_hotkey(self) -> tuple[set[str], str]:
