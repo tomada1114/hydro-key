@@ -39,7 +39,6 @@ Changelog = "https://github.com/tomada/hydro-key/blob/main/CHANGELOG.md"
 dev = [
     "mypy>=1.10",
     "pre-commit>=3.7",
-    "py2app>=0.28; sys_platform == 'darwin'",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "ruff>=0.11",
@@ -143,7 +142,6 @@ module = [
     "rumps", "rumps.*",
     "pynput", "pynput.*",
     "AppKit", "AppKit.*",
-    "py2app", "py2app.*",
 ]
 ignore_missing_imports = true
 
@@ -179,7 +177,6 @@ markers = [
 branch = true
 omit = [
     "src/hydro_key/_app.py",    # GUI coordinator — requires macOS run loop
-    "src/hydro_key/_entry.py",  # .app bundle entry point — AppKit crash dialog requires macOS run loop
 ]
 
 [tool.coverage.report]
