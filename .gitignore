@@ -38,6 +38,10 @@ site/
 .env
 .env.*
 
+# py2app
+*.iconset/
+*.dmg
+
 # OS
 .DS_Store
 Thumbs.db
