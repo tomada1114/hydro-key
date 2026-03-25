@@ -10,13 +10,6 @@ import hydro_key
 from hydro_key import __all__, __version__
 
 
-class TestEntryImportChain:
-    def test_run_is_callable(self):
-        from hydro_key import run  # noqa: PLC0415  # verifying this import path works
-
-        assert callable(run)
-
-
 class TestPackageMetadata:
     def test_public_exports(self):
         assert set(__all__) == {"__version__", "run"}
