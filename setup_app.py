@@ -3,6 +3,10 @@
 Patches ``parse_config_files`` to clear ``install_requires`` that
 setuptools reads from ``pyproject.toml`` — py2app rejects it and we
 bundle dependencies ourselves via the ``packages`` option.
+
+The patch must be applied before ``py2app`` is imported because importing
+``py2app`` registers the ``py2app`` command with setuptools, which triggers
+config file parsing.
 """
 
 from __future__ import annotations
@@ -23,25 +27,31 @@ if not hasattr(setuptools.dist.Distribution, "parse_config_files"):
 _orig_parse = setuptools.dist.Distribution.parse_config_files
 
 
-def _patched_parse(self, *args, **kwargs):  # type: ignore[no-untyped-def]  # must match setuptools internal signature
+def _patched_parse(self, *args, **kwargs):  # type: ignore[no-untyped-def]
     _orig_parse(self, *args, **kwargs)
-    self.install_requires = []  # type: ignore[attr-defined]  # dynamically populated by setuptools
+    self.install_requires = []  # type: ignore[attr-defined]
 
 
-setuptools.dist.Distribution.parse_config_files = _patched_parse  # type: ignore[assignment]  # intentional monkey-patch for py2app compat
+setuptools.dist.Distribution.parse_config_files = _patched_parse  # type: ignore[assignment]
 
-import py2app  # noqa: E402, F401, I001  # must import after monkey-patch; registers the py2app command with setuptools
-from setuptools import setup  # type: ignore[import-untyped]  # noqa: E402  # py2app re-exports lack type info
+import py2app  # noqa: E402, F401, I001  # must import after monkey-patch
+from setuptools import setup  # type: ignore[import-untyped]  # noqa: E402  # setuptools ships no py.typed marker
 
-_pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-_version: str = _pyproject["project"]["version"]
+_version: str = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))[
+    "project"
+]["version"]
+
+_icon_path = Path("resources/HydroKey.icns")
+if not _icon_path.exists():
+    raise FileNotFoundError(
+        f"Icon file not found: {_icon_path}. Run 'just icon' to generate it."
+    )
 
 APP = ["src/hydro_key/_entry.py"]
 
-_icon_path = Path("resources/HydroKey.icns")
-
 OPTIONS: dict[str, object] = {
     "argv_emulation": False,
+    "iconfile": str(_icon_path),
     "plist": {
         "CFBundleName": "HydroKey",
         "CFBundleDisplayName": "HydroKey",
@@ -58,12 +68,6 @@ OPTIONS: dict[str, object] = {
     "packages": ["hydro_key", "rumps", "pynput"],
     "includes": ["objc", "AppKit", "Foundation", "Quartz"],
 }
-
-if not _icon_path.exists():
-    raise FileNotFoundError(
-        f"Icon file not found: {_icon_path}. Run 'just icon' to generate it."
-    )
-OPTIONS["iconfile"] = str(_icon_path)
 
 setup(
     name="HydroKey",

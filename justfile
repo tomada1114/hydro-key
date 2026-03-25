@@ -44,19 +44,21 @@ build:
 smoke: build
     uv run python scripts/smoke_test.py
 
+# Remove only py2app build artifacts (preserves tool caches)
+clean-app:
+    rm -rf dist/HydroKey.app build/
+
 # Build macOS .app bundle using py2app
-app: clean
+app: clean-app
     uv run python setup_app.py py2app
 
 # Create .dmg installer from .app bundle
 dmg: app
-    @echo "Creating DMG..."
     rm -f dist/HydroKey.dmg
     hdiutil create -volname "HydroKey" \
         -srcfolder dist/HydroKey.app \
         -ov -format UDZO \
         dist/HydroKey.dmg
-    @echo "DMG created: dist/HydroKey.dmg"
 
 # Generate .icns icon from resources/icon.png (must be at least 1024x1024)
 icon:
@@ -74,7 +76,6 @@ icon:
     sips -z 1024 1024 resources/icon.png --out resources/HydroKey.iconset/icon_512x512@2x.png
     iconutil -c icns resources/HydroKey.iconset -o resources/HydroKey.icns
     rm -rf resources/HydroKey.iconset
-    @echo "Icon created: resources/HydroKey.icns"
 
 # Remove build artifacts
 clean:

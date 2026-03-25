@@ -6,8 +6,8 @@ import sys
 import traceback
 
 
-def _show_crash_dialog(exc: BaseException) -> None:
-    """Show a native macOS alert when the app fails to start."""
+def _show_crash_dialog(exc: Exception) -> None:
+    """Show a native macOS alert on an unhandled exception from the application."""
     try:
         import AppKit  # noqa: PLC0415  # deferred import: AppKit may not be available
 
@@ -19,13 +19,16 @@ def _show_crash_dialog(exc: BaseException) -> None:
         )
         alert.setAlertStyle_(AppKit.NSAlertStyleCritical)
         alert.runModal()
-    except Exception:  # noqa: S110  # last-resort handler, nothing to do
-        pass
+    except Exception as dialog_exc:  # last-resort fallback to stderr
+        sys.stderr.write(
+            f"[HydroKey] crash dialog failed ({type(dialog_exc).__name__}: {dialog_exc})\n"
+            f"Original crash: {type(exc).__name__}: {exc}\n"
+        )
 
 
 if __name__ == "__main__":
     try:
-        from hydro_key import run
+        from hydro_key import run  # deferred: only needed inside .app
 
         run()
     except Exception as exc:

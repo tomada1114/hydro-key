@@ -179,7 +179,7 @@ markers = [
 branch = true
 omit = [
     "src/hydro_key/_app.py",    # GUI coordinator — requires macOS run loop
-    "src/hydro_key/_entry.py",  # .app bundle entry point — launch glue only
+    "src/hydro_key/_entry.py",  # .app bundle entry point — AppKit crash dialog requires macOS run loop
 ]
 
 [tool.coverage.report]
